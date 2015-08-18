@@ -257,7 +257,7 @@ func (t *Transport) newClientConn(host, port, key string) (*clientConn, error) {
 			cc.initialWindowSize = s.Val
 		default:
 			// TODO(bradfitz): handle more
-			log.Printf("Unhandled Setting: %v", s)
+			//log.Printf("Unhandled Setting: %v", s)
 		}
 		return nil
 	})
@@ -361,7 +361,7 @@ func (cc *clientConn) encodeHeaders(req *http.Request) []byte {
 		host = req.URL.Host
 	}
 
-	path := req.URL.Path
+	path := req.URL.RequestURI()
 	if path == "" {
 		path = "/"
 	}
@@ -384,7 +384,7 @@ func (cc *clientConn) encodeHeaders(req *http.Request) []byte {
 }
 
 func (cc *clientConn) writeHeader(name, value string) {
-	log.Printf("sending %q = %q", name, value)
+	////log.Printf("sending %q = %q", name, value)
 	cc.henc.WriteField(hpack.HeaderField{Name: name, Value: value})
 }
 
@@ -428,6 +428,11 @@ func (cc *clientConn) readLoop() {
 		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
 		}
+		cc.mu.Lock()
+		for _, cs := range cc.streams {
+			cs.resc <- resAndError{err: err}
+		}
+		cc.mu.Unlock()
 		for _, cs := range activeRes {
 			cs.pw.CloseWithError(err)
 		}
@@ -443,21 +448,21 @@ func (cc *clientConn) readLoop() {
 			cc.readerErr = err
 			return
 		}
-		log.Printf("Transport received %v: %#v", f.Header(), f)
+		//log.Printf("Transport received %v: %#v", f.Header(), f)
 
 		streamID := f.Header().StreamID
 
 		_, isContinue := f.(*ContinuationFrame)
 		if isContinue {
 			if streamID != continueStreamID {
-				log.Printf("Protocol violation: got CONTINUATION with id %d; want %d", streamID, continueStreamID)
+				//log.Printf("Protocol violation: got CONTINUATION with id %d; want %d", streamID, continueStreamID)
 				cc.readerErr = ConnectionError(ErrCodeProtocol)
 				return
 			}
 		} else if continueStreamID != 0 {
 			// Continue frames need to be adjacent in the stream
 			// and we were in the middle of headers.
-			log.Printf("Protocol violation: got %T for stream %d, want CONTINUATION for %d", f, streamID, continueStreamID)
+			//log.Printf("Protocol violation: got %T for stream %d, want CONTINUATION for %d", f, streamID, continueStreamID)
 			cc.readerErr = ConnectionError(ErrCodeProtocol)
 			return
 		}
@@ -490,8 +495,9 @@ func (cc *clientConn) readLoop() {
 		case *ContinuationFrame:
 			cc.hdec.Write(f.HeaderBlockFragment())
 		case *DataFrame:
-			log.Printf("DATA: %q", f.Data())
-			cs.pw.Write(f.Data())
+			//log.Printf("DATA: %q", f.Data())
+			windowDelta, _ := cs.pw.Write(f.Data())
+			cc.fr.WriteWindowUpdate(cs.ID, uint32(windowDelta))
 		case *GoAwayFrame:
 			cc.t.removeClientConn(cc)
 			if f.ErrCode != 0 {
@@ -534,7 +540,7 @@ func (cc *clientConn) readLoop() {
 func (cc *clientConn) onNewHeaderField(f hpack.HeaderField) {
 	// TODO: verifiy pseudo headers come before non-pseudo headers
 	// TODO: verifiy the status is set
-	log.Printf("Header field: %+v", f)
+	//log.Printf("Header field: %+v", f)
 	if f.Name == ":status" {
 		code, err := strconv.Atoi(f.Value)
 		if err != nil {

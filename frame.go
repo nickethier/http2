@@ -307,6 +307,7 @@ func (f *Framer) endWrite() error {
 	if length >= (1 << 24) {
 		return ErrFrameTooLarge
 	}
+
 	_ = append(f.wbuf[:0],
 		byte(length>>16),
 		byte(length>>8),
