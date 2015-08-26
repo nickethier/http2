@@ -304,7 +304,7 @@ func (cc *clientConn) roundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	cs := cc.newStream()
-	hasBody := false // TODO
+	hasBody := req.Body != nil // TODO
 
 	// we send: HEADERS[+CONTINUATION] + (DATA?)
 	hdrs := cc.encodeHeaders(req)
@@ -333,8 +333,10 @@ func (cc *clientConn) roundTrip(req *http.Request) (*http.Response, error) {
 	cc.mu.Unlock()
 
 	if hasBody {
-		// TODO: write data. and it should probably be interleaved:
-		//   go ... io.Copy(dataFrameWriter{cc, cs, ...}, req.Body) ... etc
+		fmt.Println("Reading data from body.")
+		reader := NewDebugReader(req.Body)
+		writer := NewDebugWriter(cc.fr.DataFrameWriterForStream(cs.ID))
+		go io.Copy(writer, reader)
 	}
 
 	if werr != nil {
@@ -556,4 +558,37 @@ func (cc *clientConn) onNewHeaderField(f hpack.HeaderField) {
 		return
 	}
 	cc.nextRes.Header.Add(http.CanonicalHeaderKey(f.Name), f.Value)
+}
+
+type DebugWriter struct {
+	w io.Writer
+}
+
+func (fw *DebugWriter) Write(p []byte) (n int, err error) {
+
+	fmt.Println("Write(transport): " + string(p))
+	n, err = fw.w.Write(p)
+
+	return n, err
+
+}
+
+func NewDebugWriter(w io.Writer) *DebugWriter {
+	fw := DebugWriter{w: w}
+	return &fw
+}
+
+func NewDebugReader(r io.Reader) *DebugReader {
+	fr := DebugReader{r: r}
+	return &fr
+}
+
+type DebugReader struct {
+	r io.Reader
+}
+
+func (fr *DebugReader) Read(p []byte) (n int, err error) {
+	n, err = fr.r.Read(p)
+	fmt.Println("Read(transport): " + string(p))
+	return n, err
 }

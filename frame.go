@@ -466,6 +466,26 @@ func (f *Framer) WriteData(streamID uint32, endStream bool, data []byte) error {
 	return f.endWrite()
 }
 
+type DataFrameWriter struct {
+	streamID uint32
+	f        *Framer
+}
+
+func (w *DataFrameWriter) Write(p []byte) (n int, err error) {
+	err = w.f.WriteData(w.streamID, false, p)
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (f *Framer) DataFrameWriterForStream(streamID uint32) io.Writer {
+	return &DataFrameWriter{
+		streamID: streamID,
+		f:        f,
+	}
+}
+
 // A SettingsFrame conveys configuration parameters that affect how
 // endpoints communicate, such as preferences and constraints on peer
 // behavior.
